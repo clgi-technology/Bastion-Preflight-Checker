@@ -29,36 +29,39 @@ This script is ideal for multi-tenant bastion setups where user provisioning and
 
 🚀 Quick Start
 1. Clone or Download
-bash
-Copy
-Edit
+
+```
 git clone https://your-repo-url/bastion-check.git
 cd bastion-check
+```
+
 2. Make Executable
-bash
-Copy
-Edit
+```
 chmod +x bastion_check.py
+```
+
 3. Run the Check
-bash
-Copy
-Edit
+
+```
 ./bastion_check.py user@yourdomain.com
+```
+
 Optional Flags
 Option	Description
 --json	Output results to a structured JSON file
 --verbose	Show full command output for all checks
 
 Example:
-bash
-Copy
-Edit
+
+```
 ./bastion_check.py user@yourdomain.com --json --verbose
+```
+
 📄 Output Example
-sql
-Copy
-Edit
+
+```
 🔍 Running Bastion Pre-Access Check for: user@yourdomain.com
+
 
 [✅ PASS] Centrify Agent Status
 [✅ PASS] Zone Configuration
@@ -67,8 +70,12 @@ Edit
 Output:
 kinit: Password incorrect
 
+
 ...
 📄 JSON output written to bastion_check_user_yourdomain_com_20250714_132055.json
+
+```
+
 ⚙️ Requirements
 Python 3.6+
 
@@ -116,3 +123,106 @@ Adding support for non-Centrify setups (e.g., SSSD)
 Enhanced alerting/logging
 
 Integration with Slack or email
+
+
+🚀 bastion_check.py
+```
+#!/usr/bin/env python3
+import subprocess
+import sys
+import argparse
+import json
+from datetime import datetime
+
+def run_cmd(cmd, capture_output=True):
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            check=False,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.STDOUT
+        )
+        output = result.stdout.decode().strip() if result.stdout else ""
+        return result.returncode, output
+    except Exception as e:
+        return 1, f"Exception: {str(e)}"
+
+def check_agent_status():
+    return run_cmd("/opt/centrifydc/bin/adinfo")
+
+def check_zone():
+    return run_cmd("/opt/centrifydc/bin/adinfo --zone")
+
+def check_user_zone(user):
+    return run_cmd(f"/opt/centrifydc/bin/lsa {user}")
+
+def check_user_roles(user):
+    return run_cmd(f"/opt/centrifydc/bin/cdquery -W \"select * from CentrifyUnixRight where UserName = '{user}'\"")
+
+def test_kinit(user):
+    return run_cmd(f"echo | kinit {user}", capture_output=True)
+
+def check_getent(user):
+    return run_cmd(f"getent passwd {user}")
+
+def check_ssh(user):
+    return run_cmd(f"ssh -o BatchMode=yes -o ConnectTimeout=5 {user}@localhost 'exit'", capture_output=True)
+
+def check_sudo_rights(user):
+    return run_cmd(f"dzinfo -R {user}")
+
+def check_ntp_sync():
+    return run_cmd("chronyc tracking || ntpstat")
+
+def check_dns():
+    return run_cmd("host ad.example.com")  # Replace with actual domain controller FQDN
+
+def summarize(name, code, output):
+    status = "✅ PASS" if code == 0 else "❌ FAIL"
+    print(f"[{status}] {name}")
+    if code != 0 or "--verbose" in sys.argv:
+        print(f"Output:\n{output}\n")
+
+def main():
+    parser = argparse.ArgumentParser(description="Check Bastion Access Readiness")
+    parser.add_argument("user", help="Username in user@domain format")
+    parser.add_argument("--json", help="Output results to JSON file", action="store_true")
+    args = parser.parse_args()
+
+    results = {}
+
+    checks = [
+        ("Centrify Agent Status", check_agent_status),
+        ("Zone Configuration", check_zone),
+        ("User Zone Mapping", lambda: check_user_zone(args.user)),
+        ("User Role Assignments", lambda: check_user_roles(args.user)),
+        ("Kerberos Ticket (kinit)", lambda: test_kinit(args.user)),
+        ("getent passwd", lambda: check_getent(args.user)),
+        ("SSH Test to Localhost", lambda: check_ssh(args.user)),
+        ("Sudo Role Check", lambda: check_sudo_rights(args.user)),
+        ("NTP/Time Sync", check_ntp_sync),
+        ("DNS Resolution", check_dns),
+    ]
+
+    print(f"🔍 Running Bastion Pre-Access Check for: {args.user}\n")
+
+    for label, check_func in checks:
+        code, output = check_func()
+        summarize(label, code, output)
+        results[label] = {
+            "status": "PASS" if code == 0 else "FAIL",
+            "output": output
+        }
+
+    if args.json:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file = f"bastion_check_{args.user.replace('@','_')}_{ts}.json"
+        with open(file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\n📄 JSON output written to {file}")
+
+if __name__ == "__main__":
+    main()
+
+```
