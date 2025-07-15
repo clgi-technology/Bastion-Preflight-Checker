@@ -226,3 +226,28 @@ if __name__ == "__main__":
     main()
 
 ```
+
+✅ Usage
+Make it executable:
+
+```
+chmod +x bastion_check.py
+Run it:
+
+```
+
+```
+./bastion_check.py user@yourdomain.com
+With verbose details and JSON output:
+```
+
+```
+./bastion_check.py user@yourdomain.com --json --verbose
+```
+
+🛠️ Customize It
+Replace host ad.example.com with your actual DC FQDN
+
+Extend it to check home directory creation or SSHD logs
+
+Add logging or alerting if you want automatic validation pipelines
